@@ -1,0 +1,131 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment & Secrets
+.env
+*.db
+*.sqlite
+*.sqlite3
+
+# Data files
+data/
+*.pdf
+*.csv
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+backups/
+backup_*.tar.gz
+backup_*.sql
+
+# Logs
+logs/
+*.log
+ingestion_log.txt
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+temp/
+
+# Scripts that are project-specific
+test_*.py
+debug_*.py
+fix_*.py
+check_*.py
+diagnose_*.py
+*_diagnostic.py
+working_*.py
+quick_*.py
+simple_*.py
+demo_*.py
+apply_*.py
+automated_*.py
+analyze_*.py
+compare_*.py
+extract_*.py
+find_*.py
+generate_*.py
+implement_*.py
+ingest_*.py
+inspect_*.py
+install_*.py
+investigate_*.py
+load_*.py
+parse_*.py
+rebuild_*.py
+reingest.sh
+revalidate_*.py
+run_*.py
+run_*.sh
+setup_*.sh
+setup_*.py
+show_*.py
+start_*.py
+verify_*.sh
+week*_*.py
+master_*.sh
+organize_*.sh
+create_*.sh
+cleanup_*.sh
+
+# Keep only essential scripts
+!scripts/
+scripts/test_*.py
+scripts/debug_*.py
+
+# Evaluation & validation (temp)
+eval/
+evaluation/
+validation/
+
+# Documentation (keep main ones)
+# !README.md
+# !DEPLOYMENT_GUIDE.md
+*.md.backup
+INSTALLATION_STATUS.md
+WEEK*.md
+pdf_format_analysis.txt
+toc_rules_ground_truth.txt
+
+# Config files (temp)
+alembic.ini
+.data_paths.conf
+sample_*.json
+
+# Misc
+sg_case_*
+missing_rules.csv
+0
+97f81a11bea9,
+python
