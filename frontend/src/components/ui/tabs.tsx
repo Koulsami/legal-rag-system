@@ -2,85 +2,81 @@
 
 import * as React from "react"
 
-interface TabsContextValue {
+type TabsContextType = {
   value: string
   onValueChange: (value: string) => void
 }
 
-const TabsContext = React.createContext<TabsContextValue | undefined>(undefined)
+const TabsContext = React.createContext<TabsContextType | null>(null)
 
-const Tabs = React.forwardRef
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { 
-    defaultValue?: string
-    value?: string
-    onValueChange?: (value: string) => void
-  }
->(({ className, defaultValue, value: controlledValue, onValueChange, children, ...props }, ref) => {
-  const [internalValue, setInternalValue] = React.useState(defaultValue || '')
-  
-  const value = controlledValue !== undefined ? controlledValue : internalValue
-  const handleValueChange = onValueChange || setInternalValue
+function Tabs({ 
+  defaultValue = "", 
+  children,
+  className = ""
+}: { 
+  defaultValue?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  const [value, setValue] = React.useState(defaultValue)
   
   return (
-    <TabsContext.Provider value={{ value, onValueChange: handleValueChange }}>
-      <div ref={ref} className={className} {...props}>
-        {children}
-      </div>
+    <TabsContext.Provider value={{ value, onValueChange: setValue }}>
+      <div className={className}>{children}</div>
     </TabsContext.Provider>
   )
-})
-Tabs.displayName = "Tabs"
+}
 
-const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={`inline-flex h-10 items-center justify-center rounded-md bg-gray-100 p-1 ${className || ''}`}
-      {...props}
-    />
+function TabsList({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`inline-flex h-10 items-center justify-center rounded-md bg-gray-100 p-1 ${className}`}>
+      {children}
+    </div>
   )
-)
-TabsList.displayName = "TabsList"
+}
 
-const TabsTrigger = React.forwardRef
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }
->(({ className, value, ...props }, ref) => {
+function TabsTrigger({ 
+  value, 
+  children, 
+  className = "" 
+}: { 
+  value: string
+  children: React.ReactNode
+  className?: string
+}) {
   const context = React.useContext(TabsContext)
-  const isActive = context?.value === value
+  if (!context) return null
+  
+  const isActive = context.value === value
   
   return (
     <button
-      ref={ref}
       type="button"
       className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
         isActive ? 'bg-white text-gray-950 shadow-sm' : ''
-      } ${className || ''}`}
-      onClick={() => context?.onValueChange(value)}
-      {...props}
-    />
+      } ${className}`}
+      onClick={() => context.onValueChange(value)}
+    >
+      {children}
+    </button>
   )
-})
-TabsTrigger.displayName = "TabsTrigger"
+}
 
-const TabsContent = React.forwardRef
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { value: string }
->(({ className, value, ...props }, ref) => {
+function TabsContent({ 
+  value, 
+  children, 
+  className = "" 
+}: { 
+  value: string
+  children: React.ReactNode
+  className?: string
+}) {
   const context = React.useContext(TabsContext)
-  const isActive = context?.value === value
+  if (!context) return null
   
-  if (!isActive) return null
+  if (context.value !== value) return null
   
-  return (
-    <div
-      ref={ref}
-      className={`mt-2 ${className || ''}`}
-      {...props}
-    />
-  )
-})
-TabsContent.displayName = "TabsContent"
+  return <div className={`mt-2 ${className}`}>{children}</div>
+}
 
 export { Tabs, TabsList, TabsTrigger, TabsContent }
