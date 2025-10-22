@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+*.db
+*.sqlite
+
+# Data
+data/
+*.csv
+*.json
+!requirements.txt
+
+# Scripts (keeping them local only)
+*_ingestion*.py
+*diagnostic*.py
+*direct_ingest*.py
+*insert_*.py
+clear_documents.py
+create_*.py
+rebuild_*.sh
+deploy.sh
+start_project.sh
+
+# Alembic (you might want to keep this, but excluding for now)
+alembic/
+
+# Docs and examples (already in root)
+docs/
+examples/
+claude_project_handoff/
+
+# Testing
+tests/
+
+# Backup requirements
+requirements-full.txt
