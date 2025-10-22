@@ -15,11 +15,18 @@ build/
 *.db
 *.sqlite
 
-# Data
+# Data files (but NOT config files)
 data/
 *.csv
+
+# Allow these specific JSON files
+!railway.json
+!package.json
+!tsconfig.json
+!*config*.json
+
+# Block other JSON files
 *.json
-!requirements.txt
 
 # Scripts (keeping them local only)
 *_ingestion*.py
