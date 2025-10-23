@@ -172,7 +172,7 @@ export const chatAPI = {
    * Send a query to the legal RAG system
    */
   query: async (request: QueryRequest): Promise<QueryResponse> => {
-    const response = await apiClient.post<QueryResponse>('/api/chat/query', request);
+    const response = await apiClient.post<QueryResponse>('/api/chat', request);
     return response.data;
   },
 
