@@ -6,7 +6,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import chat_noauth
 import time
 import logging
 from contextlib import asynccontextmanager
@@ -60,7 +59,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(chat_noauth.router)
 
 # CORS Configuration
 app.add_middleware(
