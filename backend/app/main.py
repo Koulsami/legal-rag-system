@@ -223,3 +223,24 @@ async def chat_no_auth(request: ChatRequestNoAuth):
         "interpretation_links_used": 0,
         "warnings": []
     }
+
+@app.post("/public/chat")
+async def completely_public_chat(request: dict):
+    """Completely public endpoint - no models, no auth"""
+    return {
+        "answer": "This is a public response",
+        "conversation_id": "test",
+        "context": [],
+        "citations": [],
+        "quality_metrics": {
+            "synthesis_quality": 0.8,
+            "citation_precision": 1.0,
+            "hallucination_score": 0.0,
+            "interpretation_coverage": 0.7
+        },
+        "processing_time": 0.5,
+        "session_id": "test",
+        "query_id": "test",
+        "interpretation_links_used": 0,
+        "warnings": []
+    }
