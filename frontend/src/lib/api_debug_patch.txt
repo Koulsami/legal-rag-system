@@ -1,0 +1,16 @@
+    const backendRequest = {
+      message: request.query,
+      conversation_id: request.session_id || 'default'
+    };
+
+    // DEBUG: Log what we're sending
+    console.log('🔍 Sending to backend:', {
+      url: '/api/chat',
+      data: backendRequest
+    });
+
+    try {
+      const response = await apiClient.post<QueryResponse>('/api/chat', backendRequest);
+      
+      // DEBUG: Log response
+      console.log('✅ Backend response:', response.data);

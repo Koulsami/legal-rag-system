@@ -63,7 +63,7 @@ export default function ChatPage() {
       });
 
       const assistantMessage: Message = {
-        id: crypto.randomUUID(),
+        id: crypto:randomUUID(),
         type: 'assistant',
         content: response.answer,
         timestamp: new Date(),

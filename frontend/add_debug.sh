@@ -1,3 +1,13 @@
+#!/bin/bash
+set -e
+cd ~/legal-rag-poc/frontend
+
+BACKUP_DIR="backups_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+cp src/lib/api.ts "$BACKUP_DIR/"
+cp src/app/ask/page.tsx "$BACKUP_DIR/"
+
+cat > src/lib/api.ts << 'ENDFILE'
 import axios from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://legal-rag-system-production.up.railway.app';
@@ -124,3 +134,13 @@ export function handleAPIError(error: any): string {
   }
   return error.message || 'Unexpected error';
 }
+ENDFILE
+
+echo "✅ Debug logs added to api.ts"
+echo "✅ Backups in: $BACKUP_DIR"
+echo ""
+echo "Now:"
+echo "1. Refresh browser (Ctrl+Shift+R)"
+echo "2. Open console (F12)"
+echo "3. Send test message"
+echo "4. Look for 📤 📥 ❌ emoji logs"
