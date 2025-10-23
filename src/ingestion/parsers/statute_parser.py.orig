@@ -1,0 +1,265 @@
+"""
+Enhanced statute parser with fuzzy matching fallback.
+Tries regex first, falls back to fuzzy matching if needed.
+"""
+
+from typing import List, Optional
+import re
+import hashlib
+from pathlib import Path
+from ..models import SourceDocument, ParsedDocument
+from ..interfaces import DocumentParser
+from .fuzzy_parser_utils import FuzzyStatuteMatcher
+
+
+class StatuteParser(DocumentParser):
+    """
+    Parser for Singapore statutes with hierarchical structure.
+    
+    Uses fuzzy matching to handle format variations.
+    
+    Hierarchy:
+      Level 0: Full Act (root document)
+      Level 1: Section (e.g., "1", "2", "3")
+      Level 2: Subsection (e.g., "(a)", "(b)")
+    """
+
+    def __init__(self, config=None):
+        super().__init__(config)
+
+        # Standard regex patterns (fast path)
+        self.section_pattern = re.compile(
+            r'^\s*(\d+[A-Z]?)\.(?:—)?(?:\(\d+\))?\s*([A-Z][^.]*)',
+            re.MULTILINE
+        )
+        
+        self.subsection_pattern = re.compile(
+            r'^\s*(?:\d+\.—)?\(([a-z0-9]+)\)\s+(.+)',
+            re.MULTILINE
+        )
+        
+        # Fuzzy matcher for fallback
+        self.fuzzy_matcher = FuzzyStatuteMatcher(similarity_threshold=80)
+
+    def supports_format(self, format: str) -> bool:
+        """Check if parser supports format."""
+        return format.lower() in ['pdf', 'txt', 'text']
+
+    def parse(self, source_doc: SourceDocument) -> List[ParsedDocument]:
+        """Parse statute into hierarchical structure."""
+        results = []
+
+        # Generate doc_id from filepath
+        filename = Path(source_doc.filepath).stem
+        doc_id = filename.lower().replace(' ', '_').replace('-', '_')
+
+        # Extract Act name from filepath or content
+        act_name = self._extract_act_name(filename, source_doc.raw_content)
+
+        # 1. Create root document (Level 0: Full Act)
+        root_doc = ParsedDocument(
+            id=doc_id,
+            doc_type='statute',
+            title=filename,
+            full_text=source_doc.raw_content,
+            level=0,
+            parent_id=None,
+            act_name=act_name,
+            jurisdiction=source_doc.metadata.get('jurisdiction', 'SG'),
+            url=source_doc.metadata.get('url'),
+            hash=hashlib.sha256(source_doc.raw_content.encode()).hexdigest(),
+        )
+        results.append(root_doc)
+
+        # 2. Extract sections (Level 1) - try regex first, then fuzzy
+        sections = self._extract_sections(source_doc.raw_content, root_doc.id, act_name)
+        results.extend(sections)
+
+        # 3. Extract subsections (Level 2)
+        for section in sections:
+            subsections = self._extract_subsections(
+                section.full_text,
+                section.id,
+                act_name,
+                section.section_number
+            )
+            results.extend(subsections)
+
+        return results
+
+    def _extract_act_name(self, filename: str, text: str) -> str:
+        """Extract Act name from filename or text."""
+        # Try filename first
+        if 'ACT' in filename.upper():
+            return filename.strip()
+
+        # Try finding "MISREPRESENTATION ACT" etc in text
+        if text:
+            lines = text.split('\n')
+            for line in lines[:20]:  # Check first 20 lines
+                if 'ACT' in line.upper() and len(line) < 100:
+                    return line.strip()
+
+        return filename
+
+    def _extract_sections(
+        self,
+        text: str,
+        parent_id: str,
+        act_name: str
+    ) -> List[ParsedDocument]:
+        """
+        Extract Level 1 sections from statute text.
+        
+        Strategy:
+        1. Try regex (fast path)
+        2. If regex fails or returns too few, use fuzzy matching
+        """
+        # Find where actual sections start
+        start_markers = [
+            r'\[.*?\d{4}\]',  # Date marker
+            r'An Act to',
+            r'Enacted by',
+        ]
+
+        text_start = 0
+        for marker in start_markers:
+            match = re.search(marker, text, re.IGNORECASE)
+            if match:
+                text_start = match.end()
+                break
+
+        working_text = text[text_start:]
+
+        # Try regex first
+        matches = list(self.section_pattern.finditer(working_text))
+        
+        # Check if regex worked well
+        if len(matches) >= 2:  # At least 2 sections found
+            print(f"✓ Regex found {len(matches)} sections")
+            return self._process_regex_sections(matches, working_text, parent_id, act_name)
+        
+        # Regex failed - use fuzzy matching
+        print(f"⚠️  Regex found only {len(matches)} sections - trying fuzzy matching...")
+        fuzzy_sections = self.fuzzy_matcher.find_sections(working_text)
+        
+        if fuzzy_sections:
+            print(f"✓ Fuzzy matching found {len(fuzzy_sections)} sections")
+            return self._process_fuzzy_sections(fuzzy_sections, parent_id, act_name)
+        
+        # Both failed
+        print(f"❌ No sections found in statute {parent_id}")
+        return []
+    
+    def _process_regex_sections(
+        self,
+        matches: List,
+        working_text: str,
+        parent_id: str,
+        act_name: str
+    ) -> List[ParsedDocument]:
+        """Process sections found by regex."""
+        sections = []
+        
+        for i, match in enumerate(matches):
+            section_num = match.group(1)
+            
+            # Extract section text
+            start_pos = match.start()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(working_text)
+            section_text = working_text[start_pos:end_pos].strip()
+            
+            # Extract title
+            section_title = f"Section {section_num}"
+            text_before = working_text[:start_pos]
+            lines_before = text_before.split('\n')
+            for line in reversed(lines_before[-5:]):
+                line = line.strip()
+                if line and len(line) < 100 and not line.startswith('('):
+                    section_title = line
+                    break
+            
+            # Generate section ID
+            section_id = f"{parent_id}_s{section_num.lower()}"
+            
+            sections.append(ParsedDocument(
+                id=section_id,
+                doc_type='statute',
+                title=section_title,
+                full_text=section_text,
+                level=1,
+                parent_id=parent_id,
+                act_name=act_name,
+                section_number=section_num,
+                hash=hashlib.sha256((section_id + section_text).encode()).hexdigest(),
+            ))
+        
+        return sections
+    
+    def _process_fuzzy_sections(
+        self,
+        fuzzy_matches: List,
+        parent_id: str,
+        act_name: str
+    ) -> List[ParsedDocument]:
+        """Process sections found by fuzzy matching."""
+        sections = []
+        
+        for match in fuzzy_matches:
+            section_num = match.number
+            section_text = match.text
+            section_title = f"Section {section_num}"
+            section_id = f"{parent_id}_s{section_num.lower()}"
+            
+            sections.append(ParsedDocument(
+                id=section_id,
+                doc_type='statute',
+                title=section_title,
+                full_text=section_text,
+                level=1,
+                parent_id=parent_id,
+                act_name=act_name,
+                section_number=section_num,
+                hash=hashlib.sha256((section_id + section_text).encode()).hexdigest(),
+            ))
+        
+        return sections
+
+    def _extract_subsections(
+        self,
+        section_text: str,
+        parent_section_id: str,
+        act_name: str,
+        section_number: str
+    ) -> List[ParsedDocument]:
+        """Extract Level 2 subsections from section text."""
+        subsections = []
+
+        # Find all subsection matches
+        matches = list(self.subsection_pattern.finditer(section_text))
+
+        for i, match in enumerate(matches):
+            subsec_num = match.group(1)
+
+            # Extract subsection text
+            start_pos = match.start()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(section_text)
+            subsec_text = section_text[start_pos:end_pos].strip()
+
+            # Generate subsection ID
+            subsec_id = f"{parent_section_id}_{subsec_num}"
+
+            subsections.append(ParsedDocument(
+                id=subsec_id,
+                doc_type='statute',
+                title=f"Section {section_number}({subsec_num})",
+                full_text=subsec_text,
+                level=2,
+                parent_id=parent_section_id,
+                act_name=act_name,
+                section_number=section_number,
+                subsection=subsec_num,
+                hash=hashlib.sha256((subsec_id + subsec_text).encode()).hexdigest(),
+            ))
+
+        return subsections

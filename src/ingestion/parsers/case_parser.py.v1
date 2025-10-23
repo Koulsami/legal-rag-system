@@ -1,0 +1,178 @@
+"""
+Fixed case parser for Singapore legal documents.
+Matches the actual format found in PDFs:
+  - Paragraphs: "1          Text" (number followed by multiple spaces, NO brackets)
+"""
+
+from typing import List, Optional
+import re
+import hashlib
+from pathlib import Path
+from ..models import SourceDocument, ParsedDocument
+from ..interfaces import DocumentParser
+
+
+class CaseParser(DocumentParser):
+    """
+    Parser for Singapore case judgments with paragraph-level structure.
+
+    Format in Singapore cases:
+      1          The defendants, Cendrawasih Shipping...
+      2          Pan United claimed that...
+    
+    Hierarchy:
+      Level 0: Full judgment (root document)
+      Level 1: Paragraph (e.g., "1", "2", "3")
+    """
+
+    def __init__(self, config=None):
+        super().__init__(config)
+
+        # FIXED: Match plain paragraph numbers followed by multiple spaces (NO brackets!)
+        # Matches: "1          Text" or "2     Text"
+        # Requires 2+ spaces to avoid matching things like "1 January"
+        self.para_pattern = re.compile(
+            r'^\s*(\d+)\s{2,}([A-Z].+)',
+            re.MULTILINE
+        )
+
+    def supports_format(self, format: str) -> bool:
+        """Check if parser supports format."""
+        return format.lower() in ['pdf', 'txt', 'text']
+
+    def parse(self, source_doc: SourceDocument) -> List[ParsedDocument]:
+        """Parse case into hierarchical structure."""
+        results = []
+
+        # Generate doc_id from filepath
+        filename = Path(source_doc.filepath).stem
+        doc_id = filename.lower().replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+
+        # Extract case metadata
+        citation = self._extract_citation(filename, source_doc.raw_content)
+        parties = self._extract_parties(filename, source_doc.raw_content)
+        court, year = self._extract_court_year(citation)
+
+        # 1. Create root document (Level 0: Full judgment)
+        root_doc = ParsedDocument(
+            id=doc_id,
+            doc_type='case',
+            title=filename,
+            full_text=source_doc.raw_content,
+            level=0,
+            parent_id=None,
+            citation=citation,
+            parties=parties,
+            court=court,
+            year=year,
+            jurisdiction=source_doc.metadata.get('jurisdiction', 'SG'),
+            url=source_doc.metadata.get('url'),
+            hash=hashlib.sha256(source_doc.raw_content.encode()).hexdigest(),
+        )
+        results.append(root_doc)
+
+        # 2. Extract paragraphs (Level 1)
+        paragraphs = self._extract_paragraphs(source_doc.raw_content, root_doc.id, citation)
+        results.extend(paragraphs)
+
+        return results
+
+    def _extract_citation(self, filename: str, text: str) -> str:
+        """Extract case citation from filename or text."""
+        # Look for pattern like [2013] SGCA 36
+        citation_pattern = re.compile(r'\[(\d{4})\]\s+([A-Z]+(?:\([A-Z]+\))?)\s+(\d+)')
+
+        # Try filename first
+        match = citation_pattern.search(filename)
+        if match:
+            return match.group(0)
+
+        # Try first few lines of text
+        if text:
+            first_lines = '\n'.join(text.split('\n')[:5])
+            match = citation_pattern.search(first_lines)
+            if match:
+                return match.group(0)
+
+        return filename
+
+    def _extract_parties(self, filename: str, text: str) -> str:
+        """Extract party names from filename."""
+        # Remove citation pattern
+        parties = re.sub(r'\[(\d{4})\]\s+([A-Z]+(?:\([A-Z]+\))?)\s+(\d+)', '', filename)
+        parties = parties.strip()
+
+        if parties:
+            return parties
+
+        # Try first line of text
+        if text:
+            first_line = text.split('\n')[0].strip()
+            first_line = re.sub(r'\[(\d{4})\]\s+([A-Z]+(?:\([A-Z]+\))?)\s+(\d+)', '', first_line)
+            return first_line.strip()
+
+        return filename
+
+    def _extract_court_year(self, citation: str) -> tuple[Optional[str], Optional[int]]:
+        """Extract court and year from citation."""
+        match = re.search(r'\[(\d{4})\]\s+([A-Z]+(?:\([A-Z]+\))?)', citation)
+        if match:
+            year = int(match.group(1))
+            court = match.group(2)
+            return court, year
+        return None, None
+
+    def _extract_paragraphs(
+        self,
+        text: str,
+        parent_id: str,
+        citation: str
+    ) -> List[ParsedDocument]:
+        """
+        Extract Level 1 paragraphs from case text.
+
+        Matches pattern: "1          Text" - number followed by 2+ spaces and uppercase letter
+        """
+        paragraphs = []
+
+        # Find all paragraph matches
+        matches = list(self.para_pattern.finditer(text))
+
+        if not matches:
+            # No numbered paragraphs found - this is a problem!
+            print(f"WARNING: No paragraphs found in case {parent_id}")
+            return []
+
+        for i, match in enumerate(matches):
+            para_num = match.group(1)  # e.g., "1", "2", "158"
+
+            # Extract paragraph text (from this match to next paragraph or end)
+            start_pos = match.start()
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+            else:
+                end_pos = len(text)
+
+            para_text = text[start_pos:end_pos].strip()
+
+            # Remove the paragraph number and extra spaces from the beginning
+            para_text = re.sub(r'^\s*\d+\s+', '', para_text)
+
+            # Generate paragraph ID
+            para_id = f"{parent_id}_para{para_num}"
+
+            # Create paragraph document
+            para_doc = ParsedDocument(
+                id=para_id,
+                doc_type='case',
+                title=f"Paragraph {para_num}",
+                full_text=para_text,
+                level=1,
+                parent_id=parent_id,
+                citation=citation,
+                para_no=int(para_num),
+                hash=hashlib.sha256((para_id + para_text).encode()).hexdigest(),
+            )
+            paragraphs.append(para_doc)
+
+        return paragraphs

@@ -1,0 +1,243 @@
+"""
+Fixed statute parser for Singapore legal documents.
+Matches Singapore Statutes Online format:
+  - Sections: "1.", "2." at start of line followed immediately by uppercase letter
+  - Subsections: "(a)", "(b)", "(1)" - may have em-dash before like "2.—(1)"
+"""
+
+from typing import List, Optional
+import re
+import hashlib
+from pathlib import Path
+from ..models import SourceDocument, ParsedDocument
+from ..interfaces import DocumentParser
+
+
+class StatuteParser(DocumentParser):
+    """
+    Parser for Singapore statutes with hierarchical structure.
+
+    Format in Singapore statutes:
+      Section title text
+      1.Section text starts here...
+      (a) subsection a
+      (b) subsection b
+      
+    Or with em-dash:
+      2.—(1) Subsection text...
+
+    Hierarchy:
+      Level 0: Full Act (root document)
+      Level 1: Section (e.g., "1", "2", "3")
+      Level 2: Subsection (e.g., "(a)", "(b)")
+    """
+
+    def __init__(self, config=None):
+        super().__init__(config)
+
+        # FIXED: Match sections that start with number followed by dot and UPPERCASE letter
+        # This avoids matching dates like "31.12"
+        # Matches: "1.Where", "2.—(1)" but NOT "31.12.2021"
+        self.section_pattern = re.compile(
+            r'^\s*(\d+[A-Z]?)\.(?:—)?(?:\(\d+\))?\s*([A-Z][^.]*)',
+            re.MULTILINE
+        )
+
+        # Subsection format: (a), (b), (1), (2) at start of line or after section number
+        # Handles both "(a)" and "2.—(1)" formats
+        self.subsection_pattern = re.compile(
+            r'^\s*(?:\d+\.—)?\(([a-z0-9]+)\)\s+(.+)',
+            re.MULTILINE
+        )
+
+    def supports_format(self, format: str) -> bool:
+        """Check if parser supports format."""
+        return format.lower() in ['pdf', 'txt', 'text']
+
+    def parse(self, source_doc: SourceDocument) -> List[ParsedDocument]:
+        """Parse statute into hierarchical structure."""
+        results = []
+
+        # Generate doc_id from filepath
+        filename = Path(source_doc.filepath).stem
+        doc_id = filename.lower().replace(' ', '_').replace('-', '_')
+
+        # Extract Act name from filepath or content
+        act_name = self._extract_act_name(filename, source_doc.raw_content)
+
+        # 1. Create root document (Level 0: Full Act)
+        root_doc = ParsedDocument(
+            id=doc_id,
+            doc_type='statute',
+            title=filename,
+            full_text=source_doc.raw_content,
+            level=0,
+            parent_id=None,
+            act_name=act_name,
+            jurisdiction=source_doc.metadata.get('jurisdiction', 'SG'),
+            url=source_doc.metadata.get('url'),
+            hash=hashlib.sha256(source_doc.raw_content.encode()).hexdigest(),
+        )
+        results.append(root_doc)
+
+        # 2. Extract sections (Level 1)
+        sections = self._extract_sections(source_doc.raw_content, root_doc.id, act_name)
+        results.extend(sections)
+
+        # 3. Extract subsections (Level 2)
+        for section in sections:
+            subsections = self._extract_subsections(
+                section.full_text,
+                section.id,
+                act_name,
+                section.section_number
+            )
+            results.extend(subsections)
+
+        return results
+
+    def _extract_act_name(self, filename: str, text: str) -> str:
+        """Extract Act name from filename or text."""
+        # Try filename first
+        if 'ACT' in filename.upper():
+            return filename.strip()
+
+        # Try finding "MISREPRESENTATION ACT" etc in text
+        if text:
+            lines = text.split('\n')
+            for line in lines[:20]:  # Check first 20 lines
+                if 'ACT' in line.upper() and len(line) < 100:
+                    return line.strip()
+
+        return filename
+
+    def _extract_sections(
+        self,
+        text: str,
+        parent_id: str,
+        act_name: str
+    ) -> List[ParsedDocument]:
+        """
+        Extract Level 1 sections from statute text.
+
+        Matches pattern: "1.Where" or "2.—(1)" - number followed by uppercase letter
+        """
+        sections = []
+
+        # Find where actual sections start (skip table of contents)
+        # Usually after "An Act to" or after a date marker like "[12 November 1993]"
+        start_markers = [
+            r'\[.*?\d{4}\]',  # Date marker like [12 November 1993]
+            r'An Act to',
+            r'Enacted by',
+        ]
+
+        text_start = 0
+        for marker in start_markers:
+            match = re.search(marker, text, re.IGNORECASE)
+            if match:
+                text_start = match.end()
+                break
+
+        # Work with text after the marker
+        working_text = text[text_start:]
+
+        # Find all section matches
+        matches = list(self.section_pattern.finditer(working_text))
+
+        if not matches:
+            print(f"WARNING: No sections found in statute {parent_id}")
+            return []
+
+        for i, match in enumerate(matches):
+            section_num = match.group(1)  # e.g., "1", "2", "3A"
+
+            # Extract section text (from this match to next section or end)
+            start_pos = match.start()
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+            else:
+                end_pos = len(working_text)
+
+            section_text = working_text[start_pos:end_pos].strip()
+
+            # Extract title (text before the number, if we can find it)
+            # Look backwards for the title
+            section_title = f"Section {section_num}"
+            
+            # Try to find section title above the section number
+            text_before = working_text[:start_pos]
+            lines_before = text_before.split('\n')
+            for line in reversed(lines_before[-5:]):  # Check last 5 lines before section
+                line = line.strip()
+                if line and len(line) < 100 and not line.startswith('('):
+                    section_title = line
+                    break
+
+            # Generate section ID
+            section_id = f"{parent_id}_s{section_num.lower()}"
+
+            # Create section document
+            section_doc = ParsedDocument(
+                id=section_id,
+                doc_type='statute',
+                title=section_title,
+                full_text=section_text,
+                level=1,
+                parent_id=parent_id,
+                act_name=act_name,
+                section_number=section_num,
+                hash=hashlib.sha256((section_id + section_text).encode()).hexdigest(),
+            )
+            sections.append(section_doc)
+
+        return sections
+
+    def _extract_subsections(
+        self,
+        section_text: str,
+        parent_section_id: str,
+        act_name: str,
+        section_number: str
+    ) -> List[ParsedDocument]:
+        """
+        Extract Level 2 subsections from section text.
+
+        Matches pattern: "(a)" or "(1)" at start of line, or "2.—(1)" format
+        """
+        subsections = []
+
+        # Find all subsection matches
+        matches = list(self.subsection_pattern.finditer(section_text))
+
+        for i, match in enumerate(matches):
+            subsec_num = match.group(1)  # e.g., "a", "b", "1", "2"
+
+            # Extract subsection text (from this match to next subsection or end)
+            start_pos = match.start()
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+            else:
+                end_pos = len(section_text)
+
+            subsec_text = section_text[start_pos:end_pos].strip()
+
+            # Generate subsection ID
+            subsec_id = f"{parent_section_id}_{subsec_num}"
+
+            # Create subsection document
+            subsec_doc = ParsedDocument(
+                id=subsec_id,
+                doc_type='statute',
+                title=f"Section {section_number}({subsec_num})",
+                full_text=subsec_text,
+                level=2,
+                parent_id=parent_section_id,
+                act_name=act_name,
+                section_number=section_number,
+                subsection=subsec_num,
+                hash=hashlib.sha256((subsec_id + subsec_text).encode()).hexdigest(),
+            )
+            subsections.append(subsec_doc)
+
+        return subsections

@@ -23,10 +23,6 @@ build/
 data/
 *.pdf
 *.csv
-*.json
-!package.json
-!package-lock.json
-!tsconfig.json
 backups/
 backup_*.tar.gz
 backup_*.sql
@@ -121,7 +117,6 @@ toc_rules_ground_truth.txt
 # Config files (temp)
 alembic.ini
 .data_paths.conf
-sample_*.json
 
 # Misc
 sg_case_*

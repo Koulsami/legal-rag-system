@@ -1,0 +1,26 @@
+{
+  "requests": [
+    {
+      "query": "What is the test for inventive step?",
+      "answer": "Section 15 of the Patents Act provides that an invention involves an inventive step if it is not obvious to a person skilled in the art.",
+      "context": [
+        {
+          "doc_id": "patents_act_s15",
+          "content": "An invention shall be taken to involve an inventive step...",
+          "doc_type": "statute"
+        }
+      ]
+    },
+    {
+      "query": "What is the test for novelty?",
+      "answer": "Section 14 of the Patents Act states that an invention is new if it does not form part of the state of the art.",
+      "context": [
+        {
+          "doc_id": "patents_act_s14",
+          "content": "An invention shall be taken to be new...",
+          "doc_type": "statute"
+        }
+      ]
+    }
+  ]
+}

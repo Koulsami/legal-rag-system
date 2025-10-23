@@ -1,0 +1,24 @@
+{
+  "query": "What is the test for inventive step under Singapore patent law?",
+  "answer": "Under Section 15 of the Patents Act, an invention is considered to involve an inventive step if it is not obvious to a person skilled in the art, having regard to any matter which forms part of the state of the art. This test was further clarified in First Currency Choice Pte Ltd v Main-Line Corporate Holdings Ltd [2008] where the Court of Appeal held that the invention must involve a technical advance that is not obvious. The court emphasized that the assessment should be made from the perspective of a person skilled in the relevant technical field, considering the common general knowledge available at the priority date.",
+  "context": [
+    {
+      "doc_id": "patents_act_s15",
+      "content": "Section 15 - Inventive step: An invention shall be taken to involve an inventive step if it is not obvious to a person skilled in the art, having regard to any matter which forms part of the state of the art by virtue only of section 14(2) (and disregarding section 14(3)).",
+      "doc_type": "statute",
+      "score": 0.95
+    },
+    {
+      "doc_id": "first_currency_2008",
+      "content": "First Currency Choice Pte Ltd v Main-Line Corporate Holdings Ltd [2008] SGCA 20: The Court of Appeal held that for an invention to involve an inventive step, it must not be obvious to a person skilled in the art. The assessment requires consideration of whether there is a technical advance that would not be obvious to the skilled person.",
+      "doc_type": "case",
+      "score": 0.88
+    },
+    {
+      "doc_id": "muhlbauer_2011",
+      "content": "Muhlbauer AG v Manufacturing Integration Technology Ltd [2011] SGCA 30: The court reiterated that the inventive step test involves determining whether the invention would have been obvious to a person skilled in the art, taking into account the common general knowledge available at the priority date.",
+      "doc_type": "case",
+      "score": 0.82
+    }
+  ]
+}
