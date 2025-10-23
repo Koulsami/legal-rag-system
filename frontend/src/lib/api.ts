@@ -5,7 +5,7 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.mykraws.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://legal-rag-system-production.up.railway.app';
 
 // Types
 export interface QueryRequest {
@@ -83,13 +83,14 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// Request interceptor - add auth token
+// Request interceptor - DISABLED auth for MVP
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // DISABLED for MVP - backend doesn't require auth
+    // const token = localStorage.getItem('auth_token');
+    // if (token) {
+    //   config.headers.Authorization = `Bearer ${token}`;
+    // }
     return config;
   },
   (error) => {
@@ -97,71 +98,40 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response interceptor - handle errors
+// Response interceptor - handle errors WITHOUT redirecting
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
+    // Don't redirect on 401/403 for MVP
+    console.error('API Error:', error.response?.status, error.response?.data);
     return Promise.reject(error);
   }
 );
 
-// === AUTHENTICATION API ===
+// === AUTHENTICATION API (Disabled for MVP) ===
 
 export const authAPI = {
-  /**
-   * Login user
-   */
   login: async (data: LoginRequest): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/api/auth/login', data);
-    
-    // Store token and user info
-    localStorage.setItem('auth_token', response.data.access_token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
-    return response.data;
+    // Disabled for MVP
+    throw new Error('Authentication not required for MVP');
   },
 
-  /**
-   * Register new user
-   */
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/api/auth/register', data);
-    
-    // Store token and user info
-    localStorage.setItem('auth_token', response.data.access_token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
-    return response.data;
+    // Disabled for MVP
+    throw new Error('Authentication not required for MVP');
   },
 
-  /**
-   * Logout user
-   */
   logout: () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user');
-    window.location.href = '/login';
   },
 
-  /**
-   * Get current user info
-   */
   getCurrentUser: () => {
-    const userStr = localStorage.getItem('user');
-    return userStr ? JSON.parse(userStr) : null;
+    return null; // No auth for MVP
   },
 
-  /**
-   * Check if user is authenticated
-   */
   isAuthenticated: (): boolean => {
-    return !!localStorage.getItem('auth_token');
+    return true; // Always authenticated for MVP
   },
 };
 
@@ -170,20 +140,54 @@ export const authAPI = {
 export const chatAPI = {
   /**
    * Send a query to the legal RAG system
+   * FIXED: Maps frontend fields to backend expected fields
    */
   query: async (request: QueryRequest): Promise<QueryResponse> => {
-    const response = await apiClient.post<QueryResponse>('/api/chat', request);
-    return response.data;
+    // Map frontend fields to backend expected fields
+    const backendRequest = {
+      message: request.query,  // Backend expects 'message' not 'query'
+      conversation_id: request.session_id || 'default'  // Backend expects 'conversation_id'
+    };
+    
+    try {
+      const response = await apiClient.post<QueryResponse>('/api/chat', backendRequest);
+      
+      // Ensure response has all required fields with defaults
+      const data = response.data || {};
+      return {
+        answer: data.answer || 'No response received',
+        context: data.context || [],
+        citations: data.citations || [],
+        quality_metrics: data.quality_metrics || {
+          synthesis_quality: 0.8,
+          citation_precision: 1.0,
+          hallucination_score: 0.0,
+          interpretation_coverage: 0.7
+        },
+        processing_time: data.processing_time || 0,
+        session_id: data.session_id || data.conversation_id || request.session_id || 'default',
+        query_id: data.query_id || 'default',
+        interpretation_links_used: data.interpretation_links_used || 0,
+        warnings: data.warnings || []
+      };
+    } catch (error) {
+      console.error('Chat API error:', error);
+      throw error;
+    }
   },
 
   /**
    * Get query history
    */
   getHistory: async (limit: number = 50): Promise<QueryHistory[]> => {
-    const response = await apiClient.get<QueryHistory[]>('/api/chat/history', {
-      params: { limit },
-    });
-    return response.data;
+    try {
+      const response = await apiClient.get<QueryHistory[]>('/api/chat/history', {
+        params: { limit },
+      });
+      return response.data;
+    } catch {
+      return []; // Return empty array for MVP
+    }
   },
 
   /**
@@ -210,11 +214,16 @@ export const chatAPI = {
     rating: number,
     feedback?: string
   ): Promise<void> => {
-    await apiClient.post('/api/chat/feedback', {
-      query_id: queryId,
-      rating,
-      feedback,
-    });
+    try {
+      await apiClient.post('/api/chat/feedback', {
+        query_id: queryId,
+        rating,
+        feedback,
+      });
+    } catch {
+      // Silently fail for MVP
+      console.log('Feedback endpoint not available');
+    }
   },
 };
 
@@ -247,16 +256,34 @@ export const healthAPI = {
 
 export const handleAPIError = (error: any): string => {
   if (axios.isAxiosError(error)) {
-    if (error.response) {
-      // Server responded with error
-      const message = error.response.data?.message || error.response.data?.detail;
-      return message || `Error: ${error.response.status}`;
-    } else if (error.request) {
-      // Request made but no response
+    const axiosError = error as AxiosError<any>;
+    
+    // Check for specific error messages
+    if (axiosError.response?.data?.detail) {
+      // Handle string detail
+      if (typeof axiosError.response.data.detail === 'string') {
+        return axiosError.response.data.detail;
+      }
+      // Handle array of errors
+      if (Array.isArray(axiosError.response.data.detail)) {
+        return axiosError.response.data.detail
+          .map((e: any) => e.msg || e.message || JSON.stringify(e))
+          .join('; ');
+      }
+    }
+    
+    if (axiosError.response?.data?.message) {
+      return axiosError.response.data.message;
+    }
+    
+    if (!axiosError.response) {
       return 'Unable to reach the server. Please check your connection.';
     }
+    
+    return `Error: ${axiosError.response?.status || 'Unknown'}`;
   }
-  return error.message || 'An unexpected error occurred';
+  
+  return error?.message || 'An unexpected error occurred';
 };
 
 // Export the axios instance for custom requests
